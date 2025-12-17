@@ -1,3 +1,4 @@
+
 import os
 from sklearn.utils import class_weight
 import numpy as np
@@ -82,19 +83,15 @@ def create_dummy_data():
 from tensorflow.keras.applications import MobileNetV2
 
 def build_model():
-    # Use MobileNetV2
     base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=IMG_SIZE + (3,))
     
-    # Unfreeze the last block of the base model for immediate fine-tuning
-    base_model.trainable = True
-    # Freeze all layers except the last 30
-    for layer in base_model.layers[:-30]:
-        layer.trainable = False
+    # Freeze the base model
+    base_model.trainable = False
     
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
     x = Dense(128, activation='relu')(x)
-    x = Dropout(0.3)(x) # Reduced dropout
+    x = Dropout(0.5)(x)
     predictions = Dense(2, activation='softmax')(x)
     
     model = Model(inputs=base_model.input, outputs=predictions)
@@ -105,12 +102,11 @@ def train():
         print(f"Data directory '{DATA_DIR}' not found.")
         return
 
-    # Reduced augmentation to preserve features
     train_datagen = ImageDataGenerator(
         rescale=1./255,
-        rotation_range=10, 
-        width_shift_range=0.1,
-        height_shift_range=0.1,
+        rotation_range=20,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
         horizontal_flip=True,
         fill_mode='nearest'
     )
@@ -140,26 +136,23 @@ def train():
     
     model = build_model()
     
-    # Use a slightly higher LR for the head but compatible with fine-tuning
     model.compile(optimizer=Adam(learning_rate=0.0001),
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
     
-    print("Class indices:", train_generator.class_indices)
-    
-    class_weights_vals = class_weight.compute_class_weight(
-        class_weight='balanced',
-        classes=np.unique(train_generator.classes),
-        y=train_generator.classes
-    )
-    class_weights = dict(enumerate(class_weights_vals))
-    print(f"Computed Class Weights: {class_weights}")
+    # Manually setting higher weight for Tumor (class 1) since the previous balanced approach failed.
+    # Tumor is roughly 2x "No Tumor". Natural bias should be to predict Tumor.
+    # But user reported "Tumor as No Tumor". This means it's ignoring the majority class??
+    # That usually means "No Tumor" features are very strong (black background?).
+    # Let's try to weight Tumor x2.
+    class_weights = {0: 1.0, 1: 5.0} # Aggressive weighting for Tumor
+    print(f"Using Manual Class Weights: {class_weights}")
 
-    print("Starting training (MobileNetV2 - Partial Fine Tune)...")
+    print("Starting training (MobileNetV2 - Aggressive Tumor Weight)...")
     history = model.fit(
         train_generator,
         steps_per_epoch=train_generator.samples // BATCH_SIZE if train_generator.samples > BATCH_SIZE else 1,
-        epochs=30, # More epochs
+        epochs=15, 
         validation_data=validation_generator,
         validation_steps=validation_generator.samples // BATCH_SIZE if validation_generator.samples > BATCH_SIZE else 1,
         class_weight=class_weights
@@ -177,4 +170,3 @@ if __name__ == "__main__":
         create_dummy_data()
         
     train()
-
