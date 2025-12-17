@@ -1,4 +1,5 @@
 import os
+from sklearn.utils import class_weight
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -140,7 +141,7 @@ def train():
                   metrics=['accuracy'])
     
     # Calculate class weights
-    from sklearn.utils import class_weight
+
     
     # Get class indices to verify 'no' is 0 and 'yes' is 1
     print("Class indices:", train_generator.class_indices)
