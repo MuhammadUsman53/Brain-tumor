@@ -164,6 +164,59 @@ def train():
         class_weight=class_weights
     )
     
+    # --- FINE TUNING ---
+    print("\nStarting Fine-Tuning...")
+    # This `model` is the Functional model we built: inputs -> base_model -> ...
+    # model.layers[1] is typically base_model (MobileNetV2) because input is layer 0
+    # Let's find the MobileNetV2 layer by name or index.
+    # In build_model(): base_model = MobileNetV2(...) which is passed as input? No.
+    # inputs=base_model.input
+    # The Model object 'model' wraps the graph.
+    # The layers of 'model' essentially flatten the graph unless it's a subclassed model with nested layers.
+    # BUT, MobileNetV2 is a Functional model itself. When we do x = base_model.output, we are hooking into it.
+    
+    # Actually, in Keras Functional API, if we use `x = base_model.output`, the base_model layers are part of the graph.
+    # However, to freeze specific layers OF the base_model, we should iterate over `base_model.layers`.
+    # We need to get the `base_model` object instance again or find it.
+    # In `build_model`, we created `base_model` but didn't attach it as a property.
+    # But `model.layers` should contain the layers.
+    # WAIT. `model.layers` in the resulting model might include the *entire* MobileNet as a single layer if we used `base_model(input)`?
+    # NO, we used `x = base_model.output`. This means the individual layers of MobileNet are NOT in `model.layers`? 
+    # Actually, usually they are NOT if we just used the output tensor.
+    # However, `base_model` variable is local to `build_model`. 
+    # We need to access the layers that *make up* the model.
+    
+    # If we constructed the model as `Model(inputs=base_model.input, ...)`:
+    # The `model` effectively *is* the extended MobileNet.
+    # So we can just iterate `model.layers`.
+    
+    # Let's check the layer names.
+    # MobileNet layers usually start with 'input_', 'Conv1', 'expanded_conv_', etc.
+    # We want to freeze the early ones.
+    
+    # Let's try iterating model.layers directly.
+    fine_tune_at = 100
+    for layer in model.layers[:fine_tune_at]:
+        layer.trainable = False
+    
+    # But wait, we set `base_model.trainable = True`... where `base_model` reference is lost.
+    # We need to set all layers to trainable = True first, then freeze early ones.
+    model.trainable = True
+        
+    # Recompile with very low learning rate
+    model.compile(loss='categorical_crossentropy',
+                  optimizer=Adam(learning_rate=1e-5),
+                  metrics=['accuracy'])
+                  
+    history_fine = model.fit(
+        train_generator,
+        steps_per_epoch=train_generator.samples // BATCH_SIZE if train_generator.samples > BATCH_SIZE else 1,
+        epochs=10, 
+        validation_data=validation_generator,
+        validation_steps=validation_generator.samples // BATCH_SIZE if validation_generator.samples > BATCH_SIZE else 1,
+        class_weight=class_weights
+    )
+    
     model.save(MODEL_PATH)
     print(f"Model saved to {MODEL_PATH}")
 
