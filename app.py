@@ -67,6 +67,7 @@ st.markdown("""
 @st.cache_resource
 def load_model():
     try:
+        # Load the pre-trained model
         model = tf.keras.models.load_model('brain_tumor_model.h5')
         return model
     except Exception as e:
@@ -97,7 +98,7 @@ with st.sidebar:
     st.markdown("Created by Muhammad Usman")
 
 # Main Page Content
-st.markdown("<h1>Brain Tumor Detection System (AI Powered)</h1>", unsafe_allow_html=True)
+st.markdown("<h1>Brain Tumor Detection System (AI Powered) v2.0</h1>", unsafe_allow_html=True)
 
 # Check if model file exists but is invalid (e.g. from git lfs or version mismatch)
 model = load_model()
@@ -148,7 +149,7 @@ if file is None:
         unsafe_allow_html=True
     )
 else:
-    image = Image.open(file)
+    image = Image.open(file).convert('RGB')
     st.image(image, use_column_width=True, caption="Uploaded MRI Scan")
     
     detect_btn = st.button("Detect Tumor")
@@ -208,4 +209,5 @@ else:
             except Exception as e:
                 st.error(f"Error processing image: {e}")
                 st.write("Make sure the image is a valid RGB image.")
+
 
