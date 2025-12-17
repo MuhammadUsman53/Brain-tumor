@@ -9,5 +9,6 @@ if not exist "brain_tumor_model.h5" (
 )
 echo.
 echo Starting Streamlit App...
-streamlit run app.py
+python -m streamlit run app.py
 pause
+
