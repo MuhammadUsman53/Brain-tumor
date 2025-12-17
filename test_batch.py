@@ -4,6 +4,7 @@ import cv2
 import os
 import random
 from tensorflow.keras.models import load_model
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 MODEL_PATH = 'brain_tumor_model.h5'
 IMG_SIZE = (224, 224)
@@ -11,8 +12,12 @@ IMG_SIZE = (224, 224)
 def prepare_image(filepath):
     img = cv2.imread(filepath)
     if img is None: return None
-    img = cv2.resize(img, IMG_SIZE)
-    img = img / 255.0
+    img = cv2.resize(img, (224, 224))
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    
+    # Use MobileNetV2 preprocess_input (maps to [-1, 1])
+    img = preprocess_input(img)
+    
     img = np.expand_dims(img, axis=0)
     return img
 
@@ -45,3 +50,4 @@ if __name__ == "__main__":
     model = load_model(MODEL_PATH)
     test_batch(model, "data/train/yes", "Tumor")
     test_batch(model, "data/train/no", "No Tumor")
+
