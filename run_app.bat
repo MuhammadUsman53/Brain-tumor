@@ -1,0 +1,13 @@
+@echo off
+echo Installing requirements...
+pip install -r requirements.txt
+echo.
+echo Checking for model...
+if not exist "brain_tumor_model.h5" (
+    echo Model not found. Running demo training...
+    python train_model.py --demo
+)
+echo.
+echo Starting Streamlit App...
+streamlit run app.py
+pause
