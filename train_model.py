@@ -79,17 +79,23 @@ def create_dummy_data():
 
     print("Dummy dataset and test images (test_image_yes.jpg, test_image_no.jpg) created.")
 
+from tensorflow.keras.applications import MobileNetV2
+
 def build_model():
+    # Use MobileNetV2
     base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=IMG_SIZE + (3,))
     
-    # Freeze the base model
-    base_model.trainable = False
+    # Unfreeze the last block of the base model for immediate fine-tuning
+    base_model.trainable = True
+    # Freeze all layers except the last 30
+    for layer in base_model.layers[:-30]:
+        layer.trainable = False
     
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
     x = Dense(128, activation='relu')(x)
-    x = Dropout(0.5)(x)
-    predictions = Dense(2, activation='softmax')(x) # 2 classes: yes or no
+    x = Dropout(0.3)(x) # Reduced dropout
+    predictions = Dense(2, activation='softmax')(x)
     
     model = Model(inputs=base_model.input, outputs=predictions)
     return model
@@ -97,16 +103,14 @@ def build_model():
 def train():
     if not os.path.exists(DATA_DIR):
         print(f"Data directory '{DATA_DIR}' not found.")
-        print("Please create a 'data' folder with 'train' and 'val' subfolders,")
-        print("containing 'yes' (tumor) and 'no' (no tumor) image folders.")
-        print("Or run with --demo to generate dummy data.")
         return
 
+    # Reduced augmentation to preserve features
     train_datagen = ImageDataGenerator(
         rescale=1./255,
-        rotation_range=20,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
+        rotation_range=10, 
+        width_shift_range=0.1,
+        height_shift_range=0.1,
         horizontal_flip=True,
         fill_mode='nearest'
     )
@@ -136,14 +140,11 @@ def train():
     
     model = build_model()
     
+    # Use a slightly higher LR for the head but compatible with fine-tuning
     model.compile(optimizer=Adam(learning_rate=0.0001),
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
     
-    # Calculate class weights
-
-    
-    # Get class indices to verify 'no' is 0 and 'yes' is 1
     print("Class indices:", train_generator.class_indices)
     
     class_weights_vals = class_weight.compute_class_weight(
@@ -154,64 +155,11 @@ def train():
     class_weights = dict(enumerate(class_weights_vals))
     print(f"Computed Class Weights: {class_weights}")
 
-    print("Starting training...")
+    print("Starting training (MobileNetV2 - Partial Fine Tune)...")
     history = model.fit(
         train_generator,
         steps_per_epoch=train_generator.samples // BATCH_SIZE if train_generator.samples > BATCH_SIZE else 1,
-        epochs=EPOCHS + 10, # Increase epochs from 10 to 20
-        validation_data=validation_generator,
-        validation_steps=validation_generator.samples // BATCH_SIZE if validation_generator.samples > BATCH_SIZE else 1,
-        class_weight=class_weights
-    )
-    
-    # --- FINE TUNING ---
-    print("\nStarting Fine-Tuning...")
-    # This `model` is the Functional model we built: inputs -> base_model -> ...
-    # model.layers[1] is typically base_model (MobileNetV2) because input is layer 0
-    # Let's find the MobileNetV2 layer by name or index.
-    # In build_model(): base_model = MobileNetV2(...) which is passed as input? No.
-    # inputs=base_model.input
-    # The Model object 'model' wraps the graph.
-    # The layers of 'model' essentially flatten the graph unless it's a subclassed model with nested layers.
-    # BUT, MobileNetV2 is a Functional model itself. When we do x = base_model.output, we are hooking into it.
-    
-    # Actually, in Keras Functional API, if we use `x = base_model.output`, the base_model layers are part of the graph.
-    # However, to freeze specific layers OF the base_model, we should iterate over `base_model.layers`.
-    # We need to get the `base_model` object instance again or find it.
-    # In `build_model`, we created `base_model` but didn't attach it as a property.
-    # But `model.layers` should contain the layers.
-    # WAIT. `model.layers` in the resulting model might include the *entire* MobileNet as a single layer if we used `base_model(input)`?
-    # NO, we used `x = base_model.output`. This means the individual layers of MobileNet are NOT in `model.layers`? 
-    # Actually, usually they are NOT if we just used the output tensor.
-    # However, `base_model` variable is local to `build_model`. 
-    # We need to access the layers that *make up* the model.
-    
-    # If we constructed the model as `Model(inputs=base_model.input, ...)`:
-    # The `model` effectively *is* the extended MobileNet.
-    # So we can just iterate `model.layers`.
-    
-    # Let's check the layer names.
-    # MobileNet layers usually start with 'input_', 'Conv1', 'expanded_conv_', etc.
-    # We want to freeze the early ones.
-    
-    # Let's try iterating model.layers directly.
-    fine_tune_at = 100
-    for layer in model.layers[:fine_tune_at]:
-        layer.trainable = False
-    
-    # But wait, we set `base_model.trainable = True`... where `base_model` reference is lost.
-    # We need to set all layers to trainable = True first, then freeze early ones.
-    model.trainable = True
-        
-    # Recompile with very low learning rate
-    model.compile(loss='categorical_crossentropy',
-                  optimizer=Adam(learning_rate=1e-5),
-                  metrics=['accuracy'])
-                  
-    history_fine = model.fit(
-        train_generator,
-        steps_per_epoch=train_generator.samples // BATCH_SIZE if train_generator.samples > BATCH_SIZE else 1,
-        epochs=10, 
+        epochs=30, # More epochs
         validation_data=validation_generator,
         validation_steps=validation_generator.samples // BATCH_SIZE if validation_generator.samples > BATCH_SIZE else 1,
         class_weight=class_weights
