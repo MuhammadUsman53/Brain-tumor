@@ -139,13 +139,28 @@ def train():
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
     
+    # Calculate class weights
+    from sklearn.utils import class_weight
+    
+    # Get class indices to verify 'no' is 0 and 'yes' is 1
+    print("Class indices:", train_generator.class_indices)
+    
+    class_weights_vals = class_weight.compute_class_weight(
+        class_weight='balanced',
+        classes=np.unique(train_generator.classes),
+        y=train_generator.classes
+    )
+    class_weights = dict(enumerate(class_weights_vals))
+    print(f"Computed Class Weights: {class_weights}")
+
     print("Starting training...")
     history = model.fit(
         train_generator,
         steps_per_epoch=train_generator.samples // BATCH_SIZE if train_generator.samples > BATCH_SIZE else 1,
-        epochs=EPOCHS,
+        epochs=EPOCHS + 10, # Increase epochs from 10 to 20
         validation_data=validation_generator,
-        validation_steps=validation_generator.samples // BATCH_SIZE if validation_generator.samples > BATCH_SIZE else 1
+        validation_steps=validation_generator.samples // BATCH_SIZE if validation_generator.samples > BATCH_SIZE else 1,
+        class_weight=class_weights
     )
     
     model.save(MODEL_PATH)
@@ -160,3 +175,4 @@ if __name__ == "__main__":
         create_dummy_data()
         
     train()
+
