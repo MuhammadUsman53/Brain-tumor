@@ -1,8 +1,13 @@
+import os
+# Force CPU usage to prevent GPU init crashes
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
 import streamlit as st
 import tensorflow as tf
 from PIL import Image, ImageOps
 import numpy as np
 import cv2
+import traceback
 
 # Set page configuration
 st.set_page_config(
@@ -69,14 +74,14 @@ def load_model():
     try:
         # Load the pre-trained model
         model = tf.keras.models.load_model('brain_tumor_model.h5')
-        return model
+        return model, None
     except Exception as e:
-        return None
+        return None, str(e)
 
 def import_and_predict(image_data, model):
     size = (224, 224)    
     image = image_data.resize(size)
-    # image = ImageOps.fit(image_data, size, Image.Resampling.LANCZOS) # fit crops the center, which might miss the tumor
+    # image = ImageOps.fit(image_data, size, Image.Resampling.LANCZOS) 
     img = np.asarray(image)
     img = img / 255.0
     img_reshape = np.expand_dims(img, axis=0)
@@ -100,41 +105,65 @@ with st.sidebar:
 # Main Page Content
 st.markdown("<h1>Brain Tumor Detection System (AI Powered) v2.0</h1>", unsafe_allow_html=True)
 
-# Check if model file exists but is invalid (e.g. from git lfs or version mismatch)
-model = load_model()
+# Check if model file exists but is invalid
+model, load_err = load_model()
 
 if model is None:
-    import os
+    # If file exists but load failed, it's corrupt
     if os.path.exists('brain_tumor_model.h5'):
-        st.warning("⚠️ potentially incompatible or corrupt model found. Removing to regenerate...")
-        os.remove('brain_tumor_model.h5')
-        # Clear cache to force reload
+        st.warning(f"⚠️ Model found but failed to load: {load_err}. Regenerating...")
+        try:
+            os.remove('brain_tumor_model.h5')
+        except PermissionError:
+            st.error("⚠️ Cannot remove corrupt model file. It is currently in use. Please delete 'brain_tumor_model.h5' manually and refresh.")
+            st.stop()
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            st.warning(f"Could not remove model file: {e}")
         st.cache_resource.clear()
     
-    # Now valid logic to generate if missing
+    # Generate if missing
     if not os.path.exists('brain_tumor_model.h5'):
-        with st.spinner("⚙️ Generating demo model for cloud environment (Auto-Heal)..."):
-            import train_model
-            # Setup dummy data ONLY if no real data
-            train_dir = os.path.join("data", "train")
-            if not os.path.exists(train_dir) or not os.listdir(train_dir):
-                 train_model.create_dummy_data()
-            
-            train_model.EPOCHS = 10 
-            train_model.train()
-            st.success("✅ Model built successfully!")
-            
-            # Clear cache again to be sure
-            st.cache_resource.clear()
-            try:
-                st.rerun()
-            except AttributeError:
-                st.experimental_rerun()
+        try:
+            with st.spinner("⚙️ Generating demo model for cloud environment (Auto-Heal)..."):
+                import train_model
+                
+                # Setup dummy data ONLY if no real data
+                train_dir = os.path.join("data", "train")
+                if not os.path.exists(train_dir) or not os.listdir(train_dir):
+                     train_model.create_dummy_data()
+                
+                # Reduce epochs for auto-generated demo model
+                train_model.EPOCHS = 1 
+                train_model.train()
+                
+                if os.path.exists('brain_tumor_model.h5'):
+                    st.success("✅ Model built successfully!")
+                    st.cache_resource.clear()
+                    
+                    # Safer rerun mechanism
+                    if hasattr(st, 'rerun'):
+                        st.rerun()
+                    elif hasattr(st, 'experimental_rerun'):
+                        st.experimental_rerun()
+                    else:
+                        st.warning("Please refresh the page manually to load the new model.")
+                else:
+                    st.error("❌ Model generation flow completed but file not found.")
+                    
+        except Exception as e:
+            st.error(f"❌ Auto-Heal Failed: {e}")
+            st.code(traceback.format_exc())
+            st.stop()
 
-model = load_model()
+# Retry load
+model, load_err_2 = load_model()
 
 if model is None:
-    st.error("❌ Critical Error: Model failed to load even after regeneration.")
+    st.error(f"❌ Critical Error: Model failed to load.")
+    st.error(f"Details: {load_err_2}")
+    st.info("If you are on Streamlit Cloud, please ensure 'brain_tumor_model.h5' is uploaded or 'data' folder is present.")
     st.stop()
 
 file = st.file_uploader("Upload an MRI Scan", type=["jpg", "png", "jpeg"])
@@ -149,8 +178,12 @@ if file is None:
         unsafe_allow_html=True
     )
 else:
-    image = Image.open(file).convert('RGB')
-    st.image(image, use_column_width=True, caption="Uploaded MRI Scan")
+    try:
+        image = Image.open(file).convert('RGB')
+        st.image(image, use_column_width=True, caption="Uploaded MRI Scan")
+    except Exception as e:
+        st.error(f"Error opening image. Please ensure it is a valid JPG/PNG file. Details: {e}")
+        st.stop()
     
     detect_btn = st.button("Detect Tumor")
     
