@@ -8,6 +8,9 @@ from PIL import Image, ImageOps
 import numpy as np
 import cv2
 import traceback
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.models import Model
 
 # Set page configuration
 st.set_page_config(
@@ -70,10 +73,25 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 @st.cache_resource
+def build_model():
+    # Rebuild the exact same architecture as training
+    base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    base_model.trainable = False # Initial state matches
+    
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    x = Dense(128, activation='relu')(x)
+    x = Dropout(0.5)(x)
+    predictions = Dense(2, activation='softmax')(x)
+    
+    model = Model(inputs=base_model.input, outputs=predictions)
+    return model
+
 def load_model():
     try:
-        # Load the pre-trained model
-        model = tf.keras.models.load_model('brain_tumor_model.h5')
+        # Load weights only to bypass architecture version mismatches
+        model = build_model()
+        model.load_weights('brain_tumor_model.h5')
         return model, None
     except Exception as e:
         return None, str(e)
