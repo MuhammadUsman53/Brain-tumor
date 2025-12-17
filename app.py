@@ -4,6 +4,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 import streamlit as st
 import tensorflow as tf
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from PIL import Image, ImageOps
 import numpy as np
 import cv2
@@ -101,7 +102,11 @@ def import_and_predict(image_data, model):
     image = image_data.resize(size)
     # image = ImageOps.fit(image_data, size, Image.Resampling.LANCZOS) 
     img = np.asarray(image)
-    img = img / 255.0
+    # img = img / 255.0  <-- Remove old scaling
+    
+    # Preprocess using MobileNetV2 logic (expects 0-255 inputs and scales internally)
+    img = preprocess_input(img)
+    
     img_reshape = np.expand_dims(img, axis=0)
     
     prediction = model.predict(img_reshape)
@@ -141,39 +146,15 @@ if model is None:
             st.warning(f"Could not remove model file: {e}")
         st.cache_resource.clear()
     
-    # Generate if missing
+    
+    # Check for model existence
     if not os.path.exists('brain_tumor_model.h5'):
-        try:
-            with st.spinner("⚙️ Generating demo model for cloud environment (Auto-Heal)..."):
-                import train_model
-                
-                # Setup dummy data ONLY if no real data
-                train_dir = os.path.join("data", "train")
-                if not os.path.exists(train_dir) or not os.listdir(train_dir):
-                     train_model.create_dummy_data()
-                
-                # Reduce epochs for auto-generated demo model
-                train_model.EPOCHS = 1 
-                train_model.train()
-                
-                if os.path.exists('brain_tumor_model.h5'):
-                    st.success("✅ Model built successfully!")
-                    st.cache_resource.clear()
-                    
-                    # Safer rerun mechanism
-                    if hasattr(st, 'rerun'):
-                        st.rerun()
-                    elif hasattr(st, 'experimental_rerun'):
-                        st.experimental_rerun()
-                    else:
-                        st.warning("Please refresh the page manually to load the new model.")
-                else:
-                    st.error("❌ Model generation flow completed but file not found.")
-                    
-        except Exception as e:
-            st.error(f"❌ Auto-Heal Failed: {e}")
-            st.code(traceback.format_exc())
-            st.stop()
+         st.error("❌ Model not found. Please ensure 'brain_tumor_model.h5' exists or train the model using your own dataset.")
+         st.info("To train: Place your dataset in the 'data' folder and run 'python train_model.py'.")
+         st.stop()
+    
+    # Generate if missing (Logic Removed per user request)
+    # if not os.path.exists('brain_tumor_model.h5'): ...
 
 # Retry load
 model, load_err_2 = load_model()
