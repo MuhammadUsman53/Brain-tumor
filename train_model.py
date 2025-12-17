@@ -1,4 +1,3 @@
-
 import os
 from sklearn.utils import class_weight
 import numpy as np
@@ -102,11 +101,12 @@ def train():
         print(f"Data directory '{DATA_DIR}' not found.")
         return
 
+    # Moderate augmentation to prevent over-distortion
     train_datagen = ImageDataGenerator(
         rescale=1./255,
-        rotation_range=20,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
+        rotation_range=15, 
+        width_shift_range=0.1,
+        height_shift_range=0.1,
         horizontal_flip=True,
         fill_mode='nearest'
     )
@@ -140,19 +140,19 @@ def train():
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
     
-    # Manually setting higher weight for Tumor (class 1) since the previous balanced approach failed.
-    # Tumor is roughly 2x "No Tumor". Natural bias should be to predict Tumor.
-    # But user reported "Tumor as No Tumor". This means it's ignoring the majority class??
-    # That usually means "No Tumor" features are very strong (black background?).
-    # Let's try to weight Tumor x2.
-    class_weights = {0: 1.0, 1: 5.0} # Aggressive weighting for Tumor
-    print(f"Using Manual Class Weights: {class_weights}")
+    # Balanced weighting to fix both False Positives and False Negatives
+    # "No Tumor" (0) needs to be respected, but "Tumor" (1) is critical.
+    # Previous: {0: 1.0, 1: 5.0} -> Too much Tumor bias
+    # Let's try {0: 2.0, 1: 1.5} -> Punish "No Tumor" errors MORE to prevent False Positives (No Tumor -> Tumor)
+    # But still keep Tumor weight > 1.0.
+    class_weights = {0: 2.0, 1: 1.5} 
+    print(f"Using Balanced Class Weights: {class_weights}")
 
-    print("Starting training (MobileNetV2 - Aggressive Tumor Weight)...")
+    print("Starting training (MobileNetV2 - Balanced)...")
     history = model.fit(
         train_generator,
         steps_per_epoch=train_generator.samples // BATCH_SIZE if train_generator.samples > BATCH_SIZE else 1,
-        epochs=15, 
+        epochs=20, 
         validation_data=validation_generator,
         validation_steps=validation_generator.samples // BATCH_SIZE if validation_generator.samples > BATCH_SIZE else 1,
         class_weight=class_weights
@@ -170,3 +170,4 @@ if __name__ == "__main__":
         create_dummy_data()
         
     train()
+
